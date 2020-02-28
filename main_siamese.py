@@ -20,6 +20,7 @@ import time
 
 from models import *
 from utils import progress_bar
+from datasets import SiameseCIFAR
 
 
 
@@ -58,11 +59,30 @@ transform_test = transforms.Compose([
     transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
 ])
 
+transform_siamese = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+])
+
 trainset = torchvision.datasets.CIFAR10(root='./data', train=True, download=True, transform=transform_train)
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=train_bs, shuffle=True, num_workers=2)
 
 testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=test_bs, shuffle=False, num_workers=2)
+
+siameseset = SiameseCIFAR(trainset)
+
+
+# # print(dir(trainset))
+# for atr in dir(trainset):
+#     if not atr.startswith('__'):
+#         print(atr)
+
+# # Plot to verify images
+# # img = trainset[30][0].numpy()
+# # plt.imshow(np.transpose(img, (1, 2, 0)))
+# # plt.show()
+
 
 classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
@@ -93,6 +113,21 @@ summary(net, input_size=(3, 32, 32))
 if device == 'cuda':   # not in use still
     net = torch.nn.DataParallel(net)
     cudnn.benchmark = True
+
+
+# Siamese initialization
+print('==> Siamese initialization..')
+
+# Set up data loaders
+siamese_bs = 128
+kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
+siamese_loader = torch.utils.data.DataLoader(siamese_dataset, batch_size=siamese_bs, shuffle=True, **kwargs)
+
+
+
+
+
+
 
 
 criterion = nn.CrossEntropyLoss()
