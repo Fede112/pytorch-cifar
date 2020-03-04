@@ -6,6 +6,7 @@ import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from torch.optim.lr_scheduler import StepLR, MultiStepLR
 
+
 import torchvision
 import torchvision.transforms as transforms
 
@@ -21,25 +22,34 @@ import time
 from models import *
 from utils import progress_bar
 from datasets import SiameseCIFAR
+from losses import ContrastiveLoss
+
+
+# temporary. TODO: merge fit with train
+import siamese_trainer
+
 
 
 
 # General Parameters
 # ------------------
-epochs = 4
+epochs = 50
 train_bs = 128
 test_bs = 100
-
+pairs_per_label = 10 # five positive and five negative. 100 pairs in total
 
 # Parser
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('-lr', default=0.1, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
+parser.add_argument('--seeding', '-s', action='store_true', help='enables seeding initialization')
+parser.add_argument('--output', '-o', type=str, help='enables seeding initialization')
 args = parser.parse_args()
 
 
 # Device
-device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+cuda = torch.cuda.is_available()
+device = 'cuda:0' if cuda else 'cpu'
 print(f"==> Set device to: {device}")
 
 best_acc = 0  # best test accuracy
@@ -70,8 +80,8 @@ trainloader = torch.utils.data.DataLoader(trainset, batch_size=train_bs, shuffle
 testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
 testloader = torch.utils.data.DataLoader(testset, batch_size=test_bs, shuffle=False, num_workers=2)
 
-siameseset = SiameseCIFAR(trainset)
-
+siamese_trainset = SiameseCIFAR(trainset, pairs_per_label)
+siamese_testset = SiameseCIFAR(testset, pairs_per_label)
 
 # # print(dir(trainset))
 # for atr in dir(trainset):
@@ -90,7 +100,7 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship'
 # Model
 print('==> Building model..')
 # net = VGG('VGG19')
-net = ResNet18
+# net = ResNet18
 # net = PreActResNet18
 # net = GoogLeNet
 # net = DenseNet121
@@ -103,33 +113,48 @@ net = ResNet18
 # net = ShuffleNetV2(1)
 # net = EfficientNetB0
 
+net = ResNet18Siamese
+
 net_name = net.__name__
 net = net()
 net = net.to(device)
 print(f'Model set to: {net_name}')
 
-summary(net, input_size=(3, 32, 32))
+# Network summary
+# summary(net, input_size=(3, 32, 32))
 
 if device == 'cuda':   # not in use still
     net = torch.nn.DataParallel(net)
     cudnn.benchmark = True
 
 
-# Siamese initialization
-print('==> Siamese initialization..')
+if args.seeding:
+    # Siamese initialization
+    print('==> Siamese initialization..')
 
-# Set up data loaders
-siamese_bs = 128
-kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
-siamese_loader = torch.utils.data.DataLoader(siamese_dataset, batch_size=siamese_bs, shuffle=True, **kwargs)
-
-
-
-
+    # Set up data loaders
+    siamese_bs = 25
+    kwargs = {'num_workers': 1, 'pin_memory': True} if cuda else {}
+    siamese_train_loader = torch.utils.data.DataLoader(siamese_trainset, batch_size=siamese_bs, shuffle=True, **kwargs)
+    siamese_test_loader = torch.utils.data.DataLoader(siamese_testset, batch_size=siamese_bs, shuffle=True, **kwargs)
 
 
+    # Seeding training
+    margin = 1.
+    seed_loss_fn = ContrastiveLoss(margin)
+    seed_lr = 1e-3
+    seed_optimizer = optim.Adam(net.parameters(), lr=seed_lr, weight_decay = 20.0)
+    # seed_optimizer = optim.SGD(net.parameters(), lr=seed_lr)
+    seed_scheduler = StepLR(seed_optimizer, 8, gamma=0.1, last_epoch=-1)
+    seed_n_epochs = 15
+    seed_log_interval = 100
+
+    siamese_trainer.fit(siamese_train_loader, siamese_train_loader, net, seed_loss_fn, seed_optimizer, seed_scheduler, seed_n_epochs, cuda, seed_log_interval)
 
 
+
+
+print('==> Training initialization..')
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
 scheduler = MultiStepLR(optimizer, milestones=[30, 60], gamma=0.1)
@@ -163,6 +188,7 @@ def train(epoch):
         optimizer.step()
 
         train_loss += loss.item()
+        print(loss.item())
         _, predicted = outputs.max(1)
         total += targets.size(0)
         correct += predicted.eq(targets).sum().item()
@@ -226,6 +252,7 @@ for epoch in range(start_epoch, start_epoch+epochs):
     scheduler.step()
     train_stats = train(epoch)
     test_stats = test(epoch)
+    # seed_stats = 
     train_hist.append(train_stats)
     test_hist.append(test_stats)
 
@@ -234,9 +261,15 @@ if not os.path.isdir('results'):
     os.mkdir('results')
 
 
+if args.output:
+    np.save(args.output + '_train' ,np.array(train_hist))   # (loss, acc)
+    # Save test
+    np.save(args.output + '_test' ,np.array(test_hist))    # (loss, acc)
+
 # Save train
-np.save('./results/' + net_name + '_train_' + 
-    time.strftime("%Y%m%d-%H%M%S") ,np.array(train_hist))   # (loss, acc)
-# Save test
-np.save('./results/' + net_name + '_test_' + 
-    time.strftime("%Y%m%d-%H%M%S") ,np.array(test_hist))    # (loss, acc)
+else:
+    np.save('./results/' + net_name + '_train_' + 
+        time.strftime("%Y%m%d-%H%M%S") ,np.array(train_hist))   # (loss, acc)
+    # Save test
+    np.save('./results/' + net_name + '_test_' + 
+        time.strftime("%Y%m%d-%H%M%S") ,np.array(test_hist))    # (loss, acc)

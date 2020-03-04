@@ -100,6 +100,53 @@ class ResNet(nn.Module):
         return out
 
 
+class ResNetSiamese(nn.Module):
+    def __init__(self, block, num_blocks, num_classes=10):
+        super(ResNetSiamese, self).__init__()
+        self.in_planes = 64
+
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
+        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+        self.linear = nn.Linear(512*block.expansion, num_classes)
+        self.seeding = False
+
+    def _make_layer(self, block, planes, num_blocks, stride):
+        strides = [stride] + [1]*(num_blocks-1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_planes, planes, stride))
+            self.in_planes = planes * block.expansion
+        return nn.Sequential(*layers)
+
+    # if input is x1 and x2, then  you use the siamese version of ResNet
+    def forward(self, x1, x2 = None):
+        out1 = F.relu(self.bn1(self.conv1(x1)))
+        out1 = self.layer1(out1)
+        out1 = self.layer2(out1)
+        out1 = self.layer3(out1)
+        out1 = self.layer4(out1)
+        out1 = F.avg_pool2d(out1, 4)
+        out1 = out1.view(out1.size(0), -1)
+
+
+        if type(x2) != type(None):
+            out2 = F.relu(self.bn1(self.conv1(x2)))
+            out2 = self.layer1(out2)
+            out2 = self.layer2(out2)
+            out2 = self.layer3(out2)
+            out2 = self.layer4(out2)
+            out2 = F.avg_pool2d(out2, 4)
+            out2 = out2.view(out2.size(0), -1)
+            return out1, out2
+
+        out1 = self.linear(out1)
+        return out1
+
+
 def ResNet18():
     return ResNet(BasicBlock, [2,2,2,2])
 
@@ -114,6 +161,9 @@ def ResNet101():
 
 def ResNet152():
     return ResNet(Bottleneck, [3,8,36,3])
+
+def ResNet18Siamese():
+    return ResNetSiamese(BasicBlock, [2,2,2,2])
 
 
 def test():

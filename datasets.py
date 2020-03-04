@@ -10,7 +10,7 @@ class SiameseCIFAR(Dataset):
     Test: Creates fixed pairs for testing
     """
 
-    def __init__(self, cifar_dataset, num_pairs = None):
+    def __init__(self, cifar_dataset, pairs_per_label = None):
         self.cifar_dataset = cifar_dataset
 
         self.train = self.cifar_dataset.train
@@ -24,32 +24,48 @@ class SiameseCIFAR(Dataset):
                                  for label in self.labels_set}
 
         self.num_pairs = len(self.cifar_dataset)
-        if num_pairs:
-            self.num_pairs = num_pairs
-
-        print (self.num_pairs)
-        print (self.labels_set)
-        print (self.label_to_indices)
         random_state = np.random.RandomState(29)
+
+        self.pairs = []
+        if pairs_per_label:
+            self.num_pairs = len(self.labels_set)*pairs_per_label
+            for label in self.labels_set:
+                
+                positive_pairs = [[i, random_state.choice(self.label_to_indices[self.targets[i]]), 1]
+                                    for i in self.label_to_indices[label][0:pairs_per_label:2]]
+
+                negative_pairs = [[i, 
+                            random_state.choice(self.label_to_indices[ 
+                                random_state.choice( list( self.labels_set - set([self.targets[i]]) )   ) ]),
+                           0]
+                          for i in self.label_to_indices[label][1:pairs_per_label:2]]
+                
+                self.pairs += positive_pairs + negative_pairs    
+            return None
 
         positive_pairs = [[i, random_state.choice(self.label_to_indices[self.targets[i]]), 1]
                           for i in range(0, self.num_pairs, 2)]
 
         negative_pairs = [[i, 
                             random_state.choice(self.label_to_indices[ 
-                                np.random.choice( list( self.labels_set - set([self.targets[i]]) )   ) ]),
+                                random_state.choice( list( self.labels_set - set([self.targets[i]]) )   ) ]),
                            0]
                           for i in range(1, self.num_pairs, 2)]
         
+
         self.pairs = positive_pairs + negative_pairs
-
-
+        return None 
+        # pair_list = []
+        # for pair in self.pairs:
+        #     pair_list.append(self.targets[pair[0]])
+        # unique, counts = np.unique(np.array(pair_list), return_counts=True)
+        # print( dict(zip(unique, counts)) )
+        
 
     def __getitem__(self, index):
         img1 = self.data[self.pairs[index][0]]
         img2 = self.data[self.pairs[index][1]]
         target = self.pairs[index][2]
-        print(img1.shape)
         img1 = Image.fromarray(img1)
         img2 = Image.fromarray(img2)
         if self.transform is not None:
@@ -58,4 +74,4 @@ class SiameseCIFAR(Dataset):
         return (img1, img2), target
 
     def __len__(self):
-        return len(self.num_pairs)
+        return self.num_pairs

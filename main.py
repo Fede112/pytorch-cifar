@@ -25,7 +25,7 @@ from utils import progress_bar
 
 # General Parameters
 # ------------------
-epochs = 4
+epochs = 50
 train_bs = 128
 test_bs = 100
 
@@ -113,7 +113,6 @@ if args.resume:
     start_epoch = checkpoint['epoch']
 
 # Training
-def train(epoch):
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0
