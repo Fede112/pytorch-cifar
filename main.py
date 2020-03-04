@@ -113,6 +113,7 @@ if args.resume:
     start_epoch = checkpoint['epoch']
 
 # Training
+def train(epoch):
     print('\nEpoch: %d' % epoch)
     net.train()
     train_loss = 0

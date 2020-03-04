@@ -63,6 +63,7 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
             outputs = (outputs,)
 
         loss_inputs = outputs
+        print(len(loss_inputs))
         if target is not None:
             target = (target,)
             loss_inputs += target
@@ -70,6 +71,7 @@ def train_epoch(train_loader, model, loss_fn, optimizer, cuda, log_interval, met
         print(len(data))
         print(data[0].shape)
         print(data[1].shape)
+        print(len(loss_inputs))
         print(loss_inputs[0].shape)
 
 
